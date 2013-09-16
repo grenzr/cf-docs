@@ -9,7 +9,7 @@ There are 2 versions of the SERVICES API, this document represents version 2 of 
 visit [Writing a v1 Cloud Foundry Service](writing-service.html).  What's different in v2:
 
 * Unidirectional RESTful HTTP messages (Brokers can run standalone)
-* Easier catalog management and orphan detection (No logic in the broker)
+* Easier catalog management and orphan detection (No logic in the broker, moving to CC)
 * API endpoints and fields are consistently named
 * Automatic cleanup/prevention of orphans (Inconsistent instances between broker and CC)
 
@@ -18,6 +18,20 @@ service broker.  The broker is expected to implement several HTTP (or HTTPS) end
 A single service can only be provided by a single broker URL,
 but horizontal scalability and load balancing allows for multiple redundant brokers.
 A broker can also offer multiple services.
+
+<div style="background-color: #fff; padding: 5px; width: 970px; margin: auto;">
+<img src="/images/running/v2services.png" width=960 height=720 />
+</div>
+
+## <a id="registering"></a>Changes to this API ##
+
+We may make the some changes to the API without changing the version number, expecting clients and servers to
+continue functioning.  These changes include:
+
+* New endpoints (or new HTTP methods to existing endpoints) can be added representing new concepts.
+This allows us to add features such as snapshots, backups, updating instances, and updating bindings.
+* New fields can be added to existing request/response messages.
+These fields must be optional should be ignored by clients and servers that do not understand them.
 
 ## <a id="registering"></a>Authentication ##
 
@@ -47,7 +61,7 @@ you can make an API request to the CC API as follows:
 <tr>
   <td>name*</td>
   <td>string</td>
-  <td>A user-friendly name for the service broker that you are adding</td>
+  <td>A user-friendly name for the service broker that you are adding, such as "MySQL".  This name will appear in the list of brokers.</td>
 </tr>
 <tr>
   <td>broker_url*</td>
@@ -72,16 +86,72 @@ When you register a broker, CC will synchronously download your service catalog 
 to download the catalog, or the catalog is invalid, CC will reject the API request with an error describing what
 went wrong.
 
+## <a id="registering"></a>Updating a Broker ##
+
+You can use the `cf update-service-broker` command, which <strong>refreshes the service catalog</strong>,
+and optionally allows you to also change the broker details.
+Or you can make an API request to the CC API as follows:
+
+`PUT /v2/service_brokers/:guid`
+
+<table>
+<thead>
+<tr>
+  <th>Request field</th>
+  <th>Type</th>
+  <th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td>name</td>
+  <td>string</td>
+  <td>A user-friendly name for the service broker that you are adding, such as "MySQL".  This name will appear in the list of brokers.</td>
+</tr>
+<tr>
+  <td>broker_url</td>
+  <td>string</td>
+  <td>The URL prefix that a broker can be reached from CC.  Usually something like `http://host:port/`, but it can use
+  SSL and a path. Basic-auth credentials cannot be supplied in this URL.</td>
+</tr>
+<tr>
+  <td>username</td>
+  <td>string</td>
+  <td>The basic-auth username to connect to the broker with</td>
+</tr>
+<tr>
+  <td>password</td>
+  <td>string</td>
+  <td>The basic-auth password to connect to the broker with</td>
+</tr>
+</tbody>
+</table>
+
+## <a id="registering"></a>Deleting a Broker ##
+
+You can use the `cf remove-service-broker` command to remove a Service Broker and all of its services and plans from the catalog.
+This request *will abort if there are any provisioned instances*, so you must clean up every service instance that a broker
+is responsible for before removing it.
+
+The request to the CC API is as follows:
+
+`DELETE /v2/service_brokers/:guid`
+
+No request body.
+
 ## <a id="catalog"></a>Catalog Management ##
 
-The first endpoint that a broker must implement is the service catalog.  CC will initially (and periodically) fetch
+The first endpoint that a broker must implement is the service catalog.  CC will initially fetch
 this endpoint from all its brokers and make adjustments to the user-facing service catalog stored in CCDB. If the catalog
 fails to initially load or validate, CC will not allow the operator to add the new broker, and should give
-a meaningful error message.
+a meaningful error message.  CC will also update the catalog whenever a broker is updated, so you can use update-service-broker with
+no changes to force a catalog refresh.
 
 When the catalog is fetched, if CC sees a service/plan that it does not recognize, it will add it to the catalog.
-If it sees one that it does recognize from a previous fetch (using IDs to correlate), it
-will update it in the catalog.  Currently it will not delete services/plans.
+If it sees one that it does recognize from a previous fetch (using IDs to correlate), it will update it in the catalog.
+It will first delete plans that are missing from the catalog, assuming they have no instances provisioned.
+If there are provisioned instances, the plan will becoming “inactive” and will no longer show up in the marketplace catalog or be provisionable.
+It will then delete services that no longer have any plans.
 
 `GET /v2/catalog`
 
@@ -102,7 +172,7 @@ will update it in the catalog.  Currently it will not delete services/plans.
 <tr>
   <td>&nbsp;&nbsp;&nbsp;&nbsp;id*</td>
   <td>string</td>
-  <td>A unique identifier used to correlate this service in future requests to the catalog</td>
+  <td>A identifier, unique within the broker, used to correlate this service in future requests to the catalog</td>
 </tr>
 <tr>
   <td>&nbsp;&nbsp;&nbsp;&nbsp;name*</td>
@@ -123,7 +193,7 @@ will update it in the catalog.  Currently it will not delete services/plans.
   <td>&nbsp;&nbsp;&nbsp;&nbsp;requires</td>
   <td>array-of-strings</td>
   <td>A list of permissions that the user would have to give the service, if they provision it.
-  Currently the only permission with any meaning is <code>syslog_drain</code>.</td>
+  Currently the only permission with any meaning is <code>syslog_drain</code>. See logregator docs for more info (TBD).</td>
 </tr>
 <tr>
   <td>&nbsp;&nbsp;&nbsp;&nbsp;plans*</td>
@@ -133,7 +203,7 @@ will update it in the catalog.  Currently it will not delete services/plans.
 <tr>
   <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;id*</td>
   <td>string</td>
-  <td>A unique identifier used to correlate this plan in future requests to the catalog</td>
+  <td>An identifier, unique within the broker, used to correlate this plan in future requests to the catalog</td>
 </tr>
 <tr>
   <td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;name*</td>
@@ -153,24 +223,29 @@ Example response
     {
       "services": [{
         "id": "service-guid-here",
-        "name": "A nice user-friendly name",
-        "description": "Something users see next to the name",
+        "name": "MySQL",
+        "description": "A mysql-compatible relational database",
         "plans": [{
-          "id": "plan-guid-here",
-          "name": "User friendly plan name",
-          "description": "Something users see next to the name"
+          "id": "plan1-guid-here",
+          "name": "small",
+          "description": "A small shared database with 100mb storage quota and 10 connections"
+        },{
+          "id": "plan2-guid-here",
+          "name": "large",
+          "description": "A large dedicated database with 10GB storage quota, 512MB of RAM, and 100 connections"
         }]
       }]
     }
 
 ## <a id="provision"></a>Provisioning ##
 
-When the broker receives a provision request from CC, it should take whatever action is necessary to create a new service
+When the broker receives a provision request from CC, it should synchronously take whatever action is necessary to create a new service
 resource for the developer.  What a provision means for different services can vary dramatically, but there are a few common
 actions that work for many services.  Examples of what provision could mean, when applied to a MySQL service:
 
 * The developer gets an empty dedicated `mysqld` process running on its own VM.
-* The developer gets an empty dedicated `mysqld` process running in lightweight container
+* The developer gets an empty dedicated `mysqld` process running in lightweight container on a shared VM
+* The developer gets an empty dedicated `mysqld` process running on a shared VM
 * The developer gets an empty dedicated database, on an existing shared running `mysqld`
 * The developer gets a database with business schema already there
 * The developer gets a copy of a full database (such as provisioning a QA database which is a copy of production)
@@ -192,21 +267,18 @@ This ID will be used for future requests (bind and unprovision), so the broker m
 </thead>
 <tbody>
 <tr>
-  <td>service_id*</td>
-  <td>string</td>
-  <td>The ID of the service (from the catalog endpoint) that the user would like provisioned.</td>
-</tr>
-<tr>
   <td>plan_id*</td>
   <td>string</td>
-  <td>The ID of the plan within the above service (from the catalog endpoint) that the user would like provisioned.</td>
+  <td>The ID of the plan within the above service (from the catalog endpoint) that the user would like provisioned.
+  Because plans have identifiers unique to a broker, this is enough information to determine what to provision.</td>
 </tr>
 </tbody>
 </table>
 
-Brokers are expected to respond with `200 OK` or `201 Created` with the response body from the table below.
+Brokers are expected to respond with `201 Created` with the response body from the table below.
 They can also return `409 Conflict` if there is already a provisioned resource at this URL.
-Since this endpoint cannot be used to update resources, brokers must return 409 if a non-identical request is made.
+Since this endpoint cannot be used to update resource parameters, brokers must return 409 if a conflicting request is made with the same ID.
+Ideally, a non-conflicting request (duplicate ID and params) would return `200 OK`, but brokers may simply return 409 for a duplicate ID.
 If they respond with any other code, CC will assume that the provision request failed and inform the user.
 
 <table>
@@ -223,7 +295,8 @@ If they respond with any other code, CC will assume that the provision request f
   <td>string</td>
   <td>The URL a web-based management UI for the service instance. This optional URL allows space developers to
   visit a friendly management console for this instance.  The URL should contain enough information to identify
-  the resource being accessed (9189kdfsk0vfnku in the example below), as well as potentially credentials to access that resource (mongouser:pass below).
+  the resource being accessed (9189kdfsk0vfnku in the example below), as well as potentially credentials to access that resource
+  (access_token=3hjdsnqadw487232lp below).
   CC will sign this URL so that the management console can trust that a user should be able to see the details of this instance.
   <em>Signing algorithm TBD.</em></td>
 </tr>
@@ -233,7 +306,7 @@ If they respond with any other code, CC will assume that the provision request f
 Example response
 
     {
-      "dashboard_url": "http://mongouser:pass@mongomgmthost/databases/9189kdfsk0vfnku"
+      "dashboard_url": "http://mongomgmthost/databases/9189kdfsk0vfnku?access_token=3hjdsnqadw487232lp"
     }
 
 
@@ -295,7 +368,8 @@ If they respond with any other code, CC will assume that the binding request fai
 <tr>
   <td>syslog_drain_url</td>
   <td>string</td>
-  <td>A URL that CF should drain logs to for the bound application.  Requires the `syslog_drain` permission to work.</td>
+  <td>A URL that CF should drain logs to for the bound application.
+  Requires the `syslog_drain` permission to have logs automatically wired to applications.</td>
 </tr>
 </tbody>
 </table>
@@ -351,9 +425,10 @@ it should return a JSON-encoded error payload.
 This payload allows the broker to expose a message to end-user or operator.  Any responses not matching this error format will
 result in the user seeing a generic internal error message.
 
+* Use HTTP status code `400 Bad Request` when the input is syntactically invalid
 * Use HTTP status code `401 Unauthorized` when authentication is missing
 * Use HTTP status code `403 Forbidden` when authentication is incorrect
-* Use HTTP status code `422 Unprocessable Entity` when the input is invalid
+* Use HTTP status code `422 Unprocessable Entity` when the input is semantically invalid
 * Use HTTP status code `502 Bad Gateway` when there was an issue with a downstream API
 * Use HTTP status code `500 Internal Server Error` for a generic issue
 
