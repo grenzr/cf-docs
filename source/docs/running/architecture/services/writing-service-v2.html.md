@@ -86,6 +86,21 @@ When you register a broker, CC will synchronously download your service catalog 
 to download the catalog, or the catalog is invalid, CC will reject the API request with an error describing what
 went wrong.
 
+Example response (similar format to all create responses in CC):
+
+    {
+      "metadata": {
+        "guid": "21eaf0bb-e1ce-4682-9902-338b1c9c6168",
+        "created_at": "2013-09-24T17:53:46+00:00",
+        "updated_at": null,
+        "url": "/v2/service_brokers/21eaf0bb-e1ce-4682-9902-338b1c9c6168"
+      },
+      "entity": {
+        "name": "david-broker",
+        "broker_url": "http://davids-broker.cf-apps.io"
+      }
+    }
+
 ## <a id="registering"></a>Updating a Broker ##
 
 You can use the `cf update-service-broker` command, which <strong>refreshes the service catalog</strong>,
@@ -271,6 +286,16 @@ This ID will be used for future requests (bind and unprovision), so the broker m
   <td>string</td>
   <td>The ID of the plan within the above service (from the catalog endpoint) that the user would like provisioned.
   Because plans have identifiers unique to a broker, this is enough information to determine what to provision.</td>
+</tr>
+<tr>
+  <td>organization_guid*</td>
+  <td>string</td>
+  <td>The CC GUID of the organization under which the service is to be provisioned.  Many brokers should not use this field, but it could be helpful in determining data placement or applying custom business rules.</td>
+</tr>
+<tr>
+  <td>space_guid*</td>
+  <td>string</td>
+  <td>Similar to organization_guid, but for the space.</td>
 </tr>
 </tbody>
 </table>
