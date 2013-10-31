@@ -86,18 +86,29 @@ When you register a broker, CC will synchronously download your service catalog 
 to download the catalog, or the catalog is invalid, CC will reject the API request with an error describing what
 went wrong.
 
+Example request:
+
+`POST https://api.cloudfoundry-system-domain.com/v2/service_brokers`
+
+    {
+      "name":"david-broker",
+      "broker_url":"http://davids-broker.cf-apps.io",
+      "username":"david",
+      "password":"secret"
+    }
+
 Example response (similar format to all create responses in CC):
 
     {
-      "metadata": {
-        "guid": "21eaf0bb-e1ce-4682-9902-338b1c9c6168",
-        "created_at": "2013-09-24T17:53:46+00:00",
-        "updated_at": null,
-        "url": "/v2/service_brokers/21eaf0bb-e1ce-4682-9902-338b1c9c6168"
+      "metadata":{
+        "guid":"21eaf0bb-e1ce-4682-9902-338b1c9c6168",
+        "created_at":"2013-09-24T17:53:46+00:00",
+        "updated_at":null,
+        "url":"/v2/service_brokers/21eaf0bb-e1ce-4682-9902-338b1c9c6168"
       },
-      "entity": {
-        "name": "david-broker",
-        "broker_url": "http://davids-broker.cf-apps.io"
+      "entity":{
+        "name":"david-broker",
+        "broker_url":"http://davids-broker.cf-apps.io"
       }
     }
 
@@ -142,6 +153,30 @@ Or you can make an API request to the CC API as follows:
 </tbody>
 </table>
 
+Example Request:
+
+`PUT https://api.cloudfoundry-system-domain.com/v2/service_brokers/21eaf0bb-e1ce-4682-9902-338b1c9c6168`
+
+    {
+      "name":"stevenson-broker"
+    }
+
+Example Response:
+
+    {
+      "metadata": {
+        "guid": "21eaf0bb-e1ce-4682-9902-338b1c9c6168",
+        "created_at": "2013-09-24T17:53:46+00:00",
+        "updated_at": "2013-09-24T20:44:27+00:00",
+        "url": "/v2/service_brokers/21eaf0bb-e1ce-4682-9902-338b1c9c6168"
+      },
+      "entity": {
+        "name": "stevenson-broker",
+        "broker_url": "http://davids-broker.cf-apps.io"
+      }
+    }
+
+
 ## <a id="registering"></a>Deleting a Broker ##
 
 You can use the `cf remove-service-broker` command to remove a Service Broker and all of its services and plans from the catalog.
@@ -173,7 +208,7 @@ It will then delete services that no longer have any plans.
 <table>
 <thead>
 <tr>
-  <th>Request field</th>
+  <th>Response field</th>
   <th>Type</th>
   <th>Description</th>
 </tr>
